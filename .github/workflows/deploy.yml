@@ -50,6 +50,51 @@ jobs:
           black --check --diff . || echo "Formatage à améliorer"
           isort --check-only --diff . || echo "Imports à organiser"
         continue-on-error: true
+        
+      - name: 🧪 Tests unitaires
+        run: |
+          python -c '
+          import sys
+          sys.path.append(".")
+          
+          # Test import app.py seulement
+          try:
+              from app import SpamShieldModels
+              print("✅ Import app.py réussi")
+          except Exception as e:
+              print(f"❌ Erreur import app.py: {e}")
+              sys.exit(1)
+          
+          # Test Few-Shot (pas besoin de modèles)
+          try:
+              spam_shield = SpamShieldModels()
+              result, conf = spam_shield.few_shot_predict("FREE PRIZE WIN NOW!")
+              print(f"✅ Test Few-Shot: {result} (confidence: {conf:.2f})")
+              assert "Spam" in result or "Ham" in result
+              print("✅ Tests passent!")
+          except Exception as e:
+              print(f"❌ Erreur test Few-Shot: {e}")
+              sys.exit(1)
+          
+          # Test que les fichiers modèles existent
+          import os
+          if os.path.exists("models/fine_tuned_model/model.safetensors"):
+              print("✅ Modèle fine-tuned trouvé")
+          else:
+              print("⚠️ Pas de modèle fine-tuned (utilisera fallback)")
+              
+          if os.path.exists("models/model_info.pkl"):
+              print("✅ Métadonnées trouvées")
+          else:
+              print("⚠️ Pas de métadonnées")
+          '
+          
+      - name: 📊 Rapport de test
+        run: |
+          echo "## 📊 Résultats des Tests" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Syntaxe Python validée" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Imports fonctionnels" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Few-Shot model testé" >> $GITHUB_STEP_SUMMARY
 
   build:
     name: 🔨 Build et Préparation
