@@ -157,7 +157,7 @@ jobs:
     name: 🚀 Déploiement Hugging Face Spaces
     runs-on: ubuntu-latest
     needs: [test, build]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: false
     
     steps:
       - name: 📥 Télécharger les artefacts
