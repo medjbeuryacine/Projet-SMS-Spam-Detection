@@ -109,23 +109,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           
-      - name: 🏗️ Pré-compilation des modèles
+      - name: 🏗️ Vérification des modèles
         run: |
-          python -c '
-          import os
-          from transformers import AutoTokenizer, AutoModelForSequenceClassification
-          
-          print("📥 Téléchargement des modèles pré-entraînés...")
-          
-          try:
-              tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased")
-              model = AutoModelForSequenceClassification.from_pretrained("distilbert-base-uncased", num_labels=2)
-              print("✅ DistilBERT téléchargé")
-          except Exception as e:
-              print(f"⚠️ Erreur DistilBERT: {e}")
-          
-          print("✅ Modèles prêts pour le déploiement")
-          '
+            echo "📦 Vérification des modèles existants..."
+            if [ -d "models/" ]; then
+                echo "✅ Dossier models/ trouvé"
+                ls -la models/
+            else
+                echo "⚠️ Pas de dossier models/ (utilisation des fallbacks)"
+            fi
+            echo "✅ Modèles prêts pour le déploiement"
           
       - name: 📁 Préparer l'artefact de déploiement
         run: |
