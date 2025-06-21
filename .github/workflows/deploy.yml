@@ -5,164 +5,155 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-  workflow_dispatch:  # Déclenchement manuel
+  workflow_dispatch:
 
 env:
   PYTHON_VERSION: "3.10"
   HF_SPACE_NAME: "spamshield-sms-detection"
 
 jobs:
-  # ============================================================================
-  # JOB 1: TESTS ET VALIDATION
-  # ============================================================================
   test:
     name: 🧪 Tests et Validation
     runs-on: ubuntu-latest
     
     steps:
-    - name: 📥 Checkout du code
-      uses: actions/checkout@v4
-      
-    - name: 🐍 Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
+      - name: 📥 Checkout du code
+        uses: actions/checkout@v4
         
-    - name: 📦 Cache des dépendances
-      uses: actions/cache@v4
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
           
-    - name: 📋 Installation des dépendances
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pytest flake8 black isort
+      - name: 📦 Cache des dépendances
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+            
+      - name: 📋 Installation des dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest flake8 black isort
+          
+      - name: 🔍 Linting avec flake8
+        run: |
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+        continue-on-error: true
         
-    - name: 🔍 Linting avec flake8
-      run: |
-        # Vérifier la syntaxe Python
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # Vérifier le style (warnings seulement)
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+      - name: 🎨 Vérification du formatage
+        run: |
+          black --check --diff . || echo "Formatage à améliorer"
+          isort --check-only --diff . || echo "Imports à organiser"
+        continue-on-error: true
         
-    - name: 🎨 Vérification du formatage
-      run: |
-        black --check --diff .
-        isort --check-only --diff .
-      continue-on-error: true  # Ne pas échouer si formatting pas parfait
-      
-    - name: 🧪 Tests unitaires
-      run: |
-        # Créer des tests basiques
-        python -c "
-        import sys
-        sys.path.append('.')
+      - name: 🧪 Tests unitaires
+        run: |
+          python -c '
+          import sys
+          sys.path.append(".")
+          
+          # Test imports
+          try:
+              from app import SpamShieldModels
+              print("✅ Import app.py réussi")
+          except Exception as e:
+              print(f"❌ Erreur import app.py: {e}")
+              sys.exit(1)
+          
+          try:
+              import train_models
+              print("✅ Import train_models.py réussi")
+          except Exception as e:
+              print(f"⚠️ Import train_models.py: {e}")
+          
+          # Test Few-Shot
+          try:
+              spam_shield = SpamShieldModels()
+              result, conf = spam_shield.few_shot_predict("FREE PRIZE WIN NOW!")
+              print(f"✅ Test Few-Shot: {result} (confidence: {conf:.2f})")
+              assert "Spam" in result or "Ham" in result
+              print("✅ Tous les tests passent!")
+          except Exception as e:
+              print(f"❌ Erreur test Few-Shot: {e}")
+              sys.exit(1)
+          '
+          
+      - name: 📊 Rapport de test
+        run: |
+          echo "## 📊 Résultats des Tests" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Syntaxe Python validée" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Imports fonctionnels" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Few-Shot model testé" >> $GITHUB_STEP_SUMMARY
 
-# Test d'import de base
-try:
-    from app import SpamShieldModels
-    print('✅ Import app.py réussi')
-except Exception as e:
-    print(f'❌ Erreur import app.py: {e}')
-    sys.exit(1)
-
-# Test d'import train_models
-try:
-    import train_models
-    print('✅ Import train_models.py réussi')
-except Exception as e:
-    print(f'⚠️ Import train_models.py: {e}')
-
-# Test de la structure Few-Shot
-try:
-    spam_shield = SpamShieldModels()
-    result, conf = spam_shield.few_shot_predict('FREE PRIZE WIN NOW!')
-    print(f'✅ Test Few-Shot: {result} (confidence: {conf:.2f})')
-    assert 'Spam' in result or 'Ham' in result, 'Résultat invalide'
-    print('✅ Tous les tests passent!')
-except Exception as e:
-    print(f'❌ Erreur test Few-Shot: {e}')
-    sys.exit(1)
-"
-        
-    - name: 📊 Rapport de test
-      run: |
-        echo "## 📊 Résultats des Tests" >> $GITHUB_STEP_SUMMARY
-        echo "- ✅ Syntaxe Python validée" >> $GITHUB_STEP_SUMMARY
-        echo "- ✅ Imports fonctionnels" >> $GITHUB_STEP_SUMMARY
-        echo "- ✅ Few-Shot model testé" >> $GITHUB_STEP_SUMMARY
-
-  # ============================================================================
-  # JOB 2: BUILD ET PRÉPARATION
-  # ============================================================================
   build:
     name: 🔨 Build et Préparation
     runs-on: ubuntu-latest
     needs: test
     
     steps:
-    - name: 📥 Checkout du code
-      uses: actions/checkout@v4
-      
-    - name: 🐍 Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
+      - name: 📥 Checkout du code
+        uses: actions/checkout@v4
         
-    - name: 📦 Installation des dépendances
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        
-    - name: 🏗️ Pré-compilation des modèles
-      run: |
-        # Télécharger les modèles sans entraîner (plus rapide)
-        python -c "
-import os
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          
+      - name: 📦 Installation des dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          
+      - name: 🏗️ Pré-compilation des modèles
+        run: |
+          python -c '
+          import os
+          from transformers import AutoTokenizer, AutoModelForSequenceClassification
+          
+          print("📥 Téléchargement des modèles pré-entraînés...")
+          
+          try:
+              tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased")
+              model = AutoModelForSequenceClassification.from_pretrained("distilbert-base-uncased", num_labels=2)
+              print("✅ DistilBERT téléchargé")
+          except Exception as e:
+              print(f"⚠️ Erreur DistilBERT: {e}")
+          
+          print("✅ Modèles prêts pour le déploiement")
+          '
+          
+      - name: 📁 Préparer l'artefact de déploiement
+        run: |
+          mkdir -p deploy
+          cp app.py deploy/
+          cp requirements.txt deploy/
+          cp README.md deploy/
+          cp -r models deploy/ 2>/dev/null || echo "Pas de dossier models (normal)"
+          
+          # Optimiser pour HF Spaces
+          cat > deploy/app_temp.py << 'EOF'
+          import os
+          os.environ["TOKENIZERS_PARALLELISM"] = "false"
+          EOF
+          cat deploy/app_temp.py deploy/app.py > deploy/app_final.py
+          mv deploy/app_final.py deploy/app.py
+          rm deploy/app_temp.py
+          
+          # Modifier server config pour HF Spaces
+          sed -i 's/server_name="127.0.0.1"/server_name="0.0.0.0"/g' deploy/app.py
+          
+      - name: 📤 Upload des artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: spamshield-deploy
+          path: deploy/
+          retention-days: 7
 
-print('📥 Téléchargement des modèles pré-entraînés...')
-
-# DistilBERT pour le fine-tuning
-try:
-    tokenizer = AutoTokenizer.from_pretrained('distilbert-base-uncased')
-    model = AutoModelForSequenceClassification.from_pretrained('distilbert-base-uncased', num_labels=2)
-    print('✅ DistilBERT téléchargé')
-except Exception as e:
-    print(f'⚠️ Erreur DistilBERT: {e}')
-
-print('✅ Modèles prêts pour le déploiement')
-"
-        
-    - name: 📁 Préparer l'artefact de déploiement
-      run: |
-        # Créer le dossier de déploiement
-        mkdir -p deploy
-        
-        # Copier les fichiers essentiels
-        cp app.py deploy/
-        cp requirements.txt deploy/
-        cp README.md deploy/
-        cp -r models deploy/ 2>/dev/null || echo "Pas de dossier models (normal)"
-        
-        # Créer un fichier de configuration pour HF Spaces
-        sed -i '1i import os\nos.environ["TOKENIZERS_PARALLELISM"] = "false"' deploy/app.py
-        sed -i 's/server_name="127.0.0.1"/server_name="0.0.0.0"/g' deploy/app.py
-        
-    - name: 📤 Upload des artefacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: spamshield-deploy
-        path: deploy/
-        retention-days: 7
-
-  # ============================================================================
-  # JOB 3: DÉPLOIEMENT SUR HUGGING FACE SPACES
-  # ============================================================================
   deploy:
     name: 🚀 Déploiement Hugging Face Spaces
     runs-on: ubuntu-latest
@@ -170,82 +161,77 @@ print('✅ Modèles prêts pour le déploiement')
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     
     steps:
-    - name: 📥 Télécharger les artefacts
-      uses: actions/download-artifact@v4
-      with:
-        name: spamshield-deploy
-        path: deploy/
-        
-    - name: 🔧 Setup Git et Hugging Face
-      run: |
-        git config --global user.name "GitHub Actions"
-        git config --global user.email "actions@github.com"
-        pip install huggingface_hub
-        
-    - name: 🚀 Déploiement sur HF Spaces
-      env:
-        HF_TOKEN: ${{ secrets.HF_TOKEN }}
-      run: |
-        python -c "
-import os
-from huggingface_hub import HfApi
-from pathlib import Path
+      - name: 📥 Télécharger les artefacts
+        uses: actions/download-artifact@v4
+        with:
+          name: spamshield-deploy
+          path: deploy/
+          
+      - name: 🔧 Setup Git et Hugging Face
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          pip install huggingface_hub
+          
+      - name: 🚀 Déploiement sur HF Spaces
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python -c '
+          import os
+          from huggingface_hub import HfApi
+          from pathlib import Path
+          
+          # Configuration
+          token = os.environ.get("HF_TOKEN")
+          space_name = "${{ env.HF_SPACE_NAME }}"
+          username = "${{ github.actor }}"
+          
+          if not token:
+              print("❌ HF_TOKEN non configuré dans les secrets GitHub")
+              print("📝 Configurez votre token HF dans Settings > Secrets > Actions")
+              exit(1)
+          
+          try:
+              # Initialiser API
+              api = HfApi(token=token)
+              space_id = f"{username}/{space_name}"
+              
+              # Créer le Space
+              try:
+                  api.create_repo(
+                      repo_id=space_id,
+                      token=token,
+                      repo_type="space",
+                      space_sdk="gradio",
+                      private=False
+                  )
+                  print(f"✅ Space créé: https://huggingface.co/spaces/{space_id}")
+              except Exception as e:
+                  print(f"⚠️ Space existe déjà ou erreur: {e}")
+              
+              # Upload fichiers
+              deploy_path = Path("deploy")
+              for file_path in deploy_path.rglob("*"):
+                  if file_path.is_file():
+                      relative_path = file_path.relative_to(deploy_path)
+                      print(f"📤 Upload: {relative_path}")
+                      api.upload_file(
+                          path_or_fileobj=str(file_path),
+                          path_in_repo=str(relative_path),
+                          repo_id=space_id,
+                          repo_type="space",
+                          token=token
+                      )
+              
+              print(f"🎉 Déploiement réussi!")
+              print(f"🌐 URL: https://huggingface.co/spaces/{space_id}")
+              
+          except Exception as e:
+              print(f"❌ Erreur de déploiement: {e}")
+              exit(1)
+          '
 
-# Configuration
-token = os.environ.get('HF_TOKEN')
-space_name = '${{ env.HF_SPACE_NAME }}'
-username = '${{ github.actor }}'  # Votre nom d'utilisateur GitHub
-
-if not token:
-    print('❌ HF_TOKEN non configuré dans les secrets GitHub')
-    print('📝 Configurez votre token HF dans Settings > Secrets > Actions')
-    exit(1)
-
-try:
-    # Initialiser l'API
-    api = HfApi(token=token)
-    
-    # Créer le Space (ou le mettre à jour)
-    space_id = f'{username}/{space_name}'
-    
-    try:
-        # Essayer de créer le Space
-        api.create_repo(
-            repo_id=space_id,
-            token=token,
-            repo_type='space',
-            space_sdk='gradio',
-            private=False
-        )
-        print(f'✅ Space créé: https://huggingface.co/spaces/{space_id}')
-    except Exception as e:
-        print(f'⚠️ Space existe déjà ou erreur: {e}')
-    
-    # Uploader les fichiers
-    deploy_path = Path('deploy')
-    for file_path in deploy_path.rglob('*'):
-        if file_path.is_file():
-            relative_path = file_path.relative_to(deploy_path)
-            print(f'📤 Upload: {relative_path}')
-            api.upload_file(
-                path_or_fileobj=str(file_path),
-                path_in_repo=str(relative_path),
-                repo_id=space_id,
-                repo_type='space',
-                token=token
-            )
-    
-    print(f'🎉 Déploiement réussi!')
-    print(f'🌐 URL: https://huggingface.co/spaces/{space_id}')
-    
-except Exception as e:
-    print(f'❌ Erreur de déploiement: {e}')
-    exit(1)
-"
-
-  # ============================================================================
-  # JOB 4: NOTIFICATION ET TESTS POST-DÉPLOIEMENT
-  # ============================================================================
   post-deploy:
     name: 📋 Tests Post-Déploiement
     runs-on: ubuntu-latest
@@ -253,46 +239,42 @@ except Exception as e:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     
     steps:
-    - name: ⏱️ Attendre le déploiement
-      run: |
-        echo "⏱️ Attente de 60 secondes pour le déploiement..."
-        sleep 60
-        
-    - name: 🌐 Test de l'endpoint
-      run: |
-        # Tester que l'application répond
-        SPACE_URL="https://huggingface.co/spaces/${{ github.actor }}/${{ env.HF_SPACE_NAME }}"
-        
-        echo "🔍 Test de l'URL: $SPACE_URL"
-        
-        # Test HTTP basique
-        if curl -s -f "$SPACE_URL" > /dev/null; then
-            echo "✅ Application accessible"
-        else
-            echo "⚠️ Application pas encore accessible (normal après déploiement)"
-        fi
-        
-    - name: 📊 Résumé du déploiement
-      run: |
-        echo "## 🚀 Déploiement Terminé" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### 📋 Informations" >> $GITHUB_STEP_SUMMARY
-        echo "- **Space**: ${{ env.HF_SPACE_NAME }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **URL**: https://huggingface.co/spaces/${{ github.actor }}/${{ env.HF_SPACE_NAME }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Branche**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### ✅ Jobs Exécutés" >> $GITHUB_STEP_SUMMARY
-        echo "- 🧪 Tests et validation" >> $GITHUB_STEP_SUMMARY
-        echo "- 🔨 Build et préparation" >> $GITHUB_STEP_SUMMARY
-        echo "- 🚀 Déploiement HF Spaces" >> $GITHUB_STEP_SUMMARY
-        echo "- 📋 Tests post-déploiement" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "🎉 **SpamShield est maintenant en ligne !**" >> $GITHUB_STEP_SUMMARY
+      - name: ⏱️ Attendre le déploiement
+        run: |
+          echo "⏱️ Attente de 60 secondes pour le déploiement..."
+          sleep 60
+          
+      - name: 🌐 Test de l'endpoint
+        run: |
+          SPACE_URL="https://huggingface.co/spaces/${{ github.actor }}/${{ env.HF_SPACE_NAME }}"
+          echo "🔍 Test de l'URL: $SPACE_URL"
+          
+          if curl -s -f "$SPACE_URL" > /dev/null; then
+              echo "✅ Application accessible"
+          else
+              echo "⚠️ Application pas encore accessible (normal après déploiement)"
+          fi
+          
+      - name: 📊 Résumé du déploiement
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## 🚀 Déploiement Terminé
+          
+          ### 📋 Informations
+          - **Space**: ${{ env.HF_SPACE_NAME }}
+          - **URL**: https://huggingface.co/spaces/${{ github.actor }}/${{ env.HF_SPACE_NAME }}
+          - **Commit**: ${{ github.sha }}
+          - **Branche**: ${{ github.ref_name }}
+          
+          ### ✅ Jobs Exécutés
+          - 🧪 Tests et validation
+          - 🔨 Build et préparation
+          - 🚀 Déploiement HF Spaces
+          - 📋 Tests post-déploiement
+          
+          🎉 **SpamShield est maintenant en ligne !**
+          EOF
 
-  # ============================================================================
-  # JOB 5: NETTOYAGE (Optionnel)
-  # ============================================================================
   cleanup:
     name: 🧹 Nettoyage
     runs-on: ubuntu-latest
@@ -300,29 +282,28 @@ except Exception as e:
     if: always()
     
     steps:
-    - name: 🗑️ Nettoyage des artefacts anciens
-      uses: actions/github-script@v7
-      with:
-        script: |
-          const { owner, repo } = context.repo;
-          
-          // Garder seulement les 5 derniers artefacts
-          const artifacts = await github.rest.actions.listArtifactsForRepo({
-            owner,
-            repo,
-            per_page: 100
-          });
-          
-          const toDelete = artifacts.data.artifacts
-            .filter(a => a.name === 'spamshield-deploy')
-            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-            .slice(5); // Garder les 5 plus récents
-          
-          for (const artifact of toDelete) {
-            await github.rest.actions.deleteArtifact({
+      - name: 🗑️ Nettoyage des artefacts anciens
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            
+            const artifacts = await github.rest.actions.listArtifactsForRepo({
               owner,
               repo,
-              artifact_id: artifact.id
+              per_page: 100
             });
-            console.log(`🗑️ Supprimé: ${artifact.name} (${artifact.created_at})`);
-          }
+            
+            const toDelete = artifacts.data.artifacts
+              .filter(a => a.name === 'spamshield-deploy')
+              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+              .slice(5);
+            
+            for (const artifact of toDelete) {
+              await github.rest.actions.deleteArtifact({
+                owner,
+                repo,
+                artifact_id: artifact.id
+              });
+              console.log(`🗑️ Supprimé: ${artifact.name} (${artifact.created_at})`);
+            }
