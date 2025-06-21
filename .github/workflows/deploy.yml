@@ -59,8 +59,8 @@ jobs:
       run: |
         # Créer des tests basiques
         python -c "
-import sys
-sys.path.append('.')
+        import sys
+        sys.path.append('.')
 
 # Test d'import de base
 try:
@@ -152,8 +152,6 @@ print('✅ Modèles prêts pour le déploiement')
         # Créer un fichier de configuration pour HF Spaces
         sed -i '1i import os\nos.environ["TOKENIZERS_PARALLELISM"] = "false"' deploy/app.py
         sed -i 's/server_name="127.0.0.1"/server_name="0.0.0.0"/g' deploy/app.py
-        mv deploy/app_optimized.py deploy/app.py
-        rm deploy/app.py.bak
         
     - name: 📤 Upload des artefacts
       uses: actions/upload-artifact@v4
@@ -190,7 +188,7 @@ print('✅ Modèles prêts pour le déploiement')
       run: |
         python -c "
 import os
-from huggingface_hub import HfApi, create_repo
+from huggingface_hub import HfApi
 from pathlib import Path
 
 # Configuration
@@ -213,12 +211,12 @@ try:
     try:
         # Essayer de créer le Space
         api.create_repo(
-          repo_id=space_id,
-          token=token,
-          repo_type='space',
-          space_sdk='gradio',
-          private=False
-      )
+            repo_id=space_id,
+            token=token,
+            repo_type='space',
+            space_sdk='gradio',
+            private=False
+        )
         print(f'✅ Space créé: https://huggingface.co/spaces/{space_id}')
     except Exception as e:
         print(f'⚠️ Space existe déjà ou erreur: {e}')
